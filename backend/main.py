@@ -26,7 +26,7 @@ app.add_middleware(
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # MongoDB client
-mongo = MongoClient(os.getenv("MONGODB_URL"))
+mongo = MongoClient(os.getenv("MONGODB_URL"), tls=True, tlsAllowInvalidCertificates=True)
 db = mongo["interview_prep_db"]
 collection = db["sessions"]
 
