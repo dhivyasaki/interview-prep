@@ -1,19 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from groq import Groq
 from dotenv import load_dotenv
-from pymongo import MongoClient
 from datetime import datetime
 import os
 
-# Load environment variables
 load_dotenv()
 
 app = FastAPI()
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,38 +18,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Groq client
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-# MongoDB client
-mongo = MongoClient(os.getenv("MONGODB_URL"), tls=True, tlsAllowInvalidCertificates=True)
-db = mongo["interview_prep_db"]
-collection = db["sessions"]
-
-# -----------------------------------------------
-# REQUEST MODEL
-# -----------------------------------------------
 class InterviewRequest(BaseModel):
     job_role: str
     experience_level: str
 
-# -----------------------------------------------
-# HOME ROUTE
-# -----------------------------------------------
 @app.get("/")
 def home():
     return {"message": "Interview Prep API is running!"}
 
-# -----------------------------------------------
-# GENERATE QUESTIONS ROUTE
-# -----------------------------------------------
 @app.post("/generate")
 def generate_questions(request: InterviewRequest):
 
     prompt = f"""
     You are an expert technical interviewer.
-
-    Generate 5 interview questions with detailed model answers for the following:
+    Generate 5 interview questions with detailed model answers for:
     Job Role: {request.job_role}
     Experience Level: {request.experience_level}
 
@@ -83,7 +63,6 @@ def generate_questions(request: InterviewRequest):
 
     result = response.choices[0].message.content
 
-    # Parse Q&A pairs
     questions = []
     lines = result.strip().split("\n")
     current_q = None
@@ -103,21 +82,32 @@ def generate_questions(request: InterviewRequest):
                 current_q = None
                 current_a = None
 
-    # Save to MongoDB
-    session = {
-        "job_role": request.job_role,
-        "experience_level": request.experience_level,
-        "questions": questions,
-        "created_at": datetime.now().isoformat()
-    }
-    collection.insert_one(session)
+    # Save to MongoDB safely
+    try:
+        from pymongo import MongoClient
+        mongo = MongoClient(os.getenv("MONGODB_URL"), serverSelectionTimeoutMS=5000)
+        db = mongo["interview_prep_db"]
+        collection = db["sessions"]
+        session = {
+            "job_role": request.job_role,
+            "experience_level": request.experience_level,
+            "questions": questions,
+            "created_at": datetime.now().isoformat()
+        }
+        collection.insert_one(session)
+    except Exception as e:
+        print(f"MongoDB save failed: {e}")
 
     return {"job_role": request.job_role, "questions": questions}
 
-# -----------------------------------------------
-# GET HISTORY ROUTE
-# -----------------------------------------------
 @app.get("/history")
 def get_history():
-    sessions = list(collection.find({}, {"_id": 0}).sort("created_at", -1).limit(5))
-    return {"sessions": sessions}
+    try:
+        from pymongo import MongoClient
+        mongo = MongoClient(os.getenv("MONGODB_URL"), serverSelectionTimeoutMS=5000)
+        db = mongo["interview_prep_db"]
+        collection = db["sessions"]
+        sessions = list(collection.find({}, {"_id": 0}).sort("created_at", -1).limit(5))
+        return {"sessions": sessions}
+    except Exception as e:
+        return {"sessions": [], "error": str(e)}
