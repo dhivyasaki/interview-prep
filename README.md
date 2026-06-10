@@ -1,4 +1,4 @@
-# Interview Prep Tool
+# Interview Prep
 
 AI-assisted web application that creates interview questions based on roles with example answers.
 
